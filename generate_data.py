@@ -1,5 +1,6 @@
+import os
 from os import SEEK_DATA
-
+from typing import Dict, Tuple
 from scipy.stats import chi2  # 用于χ²分布验证
 import warnings
 import numpy as np
@@ -12,6 +13,7 @@ import torch.nn as nn
 import torch.optim as optim
 from selenium.webdriver.common.devtools.v135.page import start_screencast
 from torch.utils.data import TensorDataset, DataLoader
+from typing_extensions import Any
 
 warnings.filterwarnings("ignore")  # 忽略数值计算警告
 
@@ -122,7 +124,6 @@ def generate_standard_gaussian_data(
     import os
     os.makedirs(save_dir, exist_ok=True)
     json_path = os.path.join(save_dir, "data_with_highdim_noise.json")
-
     # 加载已有数据（略，同原逻辑）
     if not regenerate and os.path.exists(json_path):
         with open(json_path, "r", encoding="utf-8") as f:
@@ -300,85 +301,34 @@ def compute_multinorm_max_margin(X: np.ndarray, y: np.ndarray) -> dict:
             raise RuntimeError(f"❌ {norm_name}未收敛！状态：{prob.status}，建议调整求解器参数。")
 
     return margin_dict
-# def compute_multinorm_max_margin(X: np.ndarray, y: np.ndarray) -> dict:
-#     """
-#     兼容版求解器：切换至 ECOS 求解器，避免 SCS 的底层解析错误。
-#     """
-#     # ... (前略：数据检查、k, d, margin_dict 初始化不变) ...
-#
-#     n, d = X.shape
-#     k = len(np.unique(y))
-#     margin_dict = {}
-#
-#     # 范数配置（不变，我们先尝试更换求解器来解决问题）
-#     norm_configs = [
-#         ("L2_norm", lambda W: cp.norm(W, "fro") <= 1),
-#         ("Linf_norm", lambda W: cp.norm(W, "inf") <= 1),
-#         # ("spectral_norm", lambda W: cp.norm(W, 2) <= 1)
-#     ]
-#
-#     for norm_name, constraint_fn in norm_configs:
-#         print(f"\n" + "=" * 80)
-#         print(f"📌 尝试使用 ECOS 求解器求解 {norm_name} 的 max margin")
-#         print("=" * 80)
-#
-#         # 1. 构建优化问题（略，与原代码完全相同，不变）
-#         W = cp.Variable((k, d), name="weight_matrix")
-#         margin_exprs = []
-#         for i in range(n):
-#             x_i = X[i].reshape(-1, 1)
-#             y_i = y[i]
-#             for c in range(k):
-#                 if c != y_i:
-#                     e_diff = np.zeros((k, 1))
-#                     e_diff[y_i] = 1
-#                     e_diff[c] = -1
-#                     margin = cp.matmul(e_diff.T, cp.matmul(W, x_i))
-#                     margin_exprs.append(margin)
-#
-#         if not margin_exprs:
-#             raise RuntimeError(f"❌ {norm_name}：无有效间隔表达式")
-#         margins_vec = cp.vstack(margin_exprs)
-#         min_margin = cp.min(margins_vec)
-#         objective = cp.Maximize(min_margin)
-#         constraints = [constraint_fn(W)]
-#
-#         # 2. 求解器参数（为 ECOS 优化）
-#         solver_opts = {
-#             "verbose": True,  # 打开日志
-#             "max_iters": 1000,  # ECOS 使用 max_iters
-#             "abstol": 1e-9,  # 绝对精度
-#             "reltol": 1e-9  # 相对精度
-#         }
-#
-#         # 3. 核心修改：调用 ECOS 求解
-#         print(f"🚀 开始求解：{norm_name}，求解器：ECOS")
-#         prob = cp.Problem(objective, constraints)
-#
-#         # ⚠️ 将 solver=cp.SCS 替换为 solver=cp.ECOS
-#         prob.solve(
-#             solver=cp.ECOS,
-#             **solver_opts
-#         )
-#
-#         # 4. 结果处理（略，与原代码完全相同，不变）
-#         if prob.status in [cp.OPTIMAL, cp.OPTIMAL_INACCURATE]:
-#             final_gamma = np.round(min_margin.value, 6) if min_margin.value is not None else 0.0
-#             final_W = np.round(W.value, 6) if W.value is not None else np.zeros((k, d))
-#             margin_dict[norm_name] = {
-#                 "gamma": final_gamma.tolist(),
-#                 "matrix": final_W.tolist()
-#             }
-#             print(f"\n✅ {norm_name}求解成功！")
-#             print(f"   - 求解状态：{prob.status}")
-#             print(f"   - 最终gamma（最小间隔）：{final_gamma}")
-#             # ... (打印矩阵预览) ...
-#             print(f"   - 最终矩阵（最小间隔）：{final_W}")
-#         else:
-#             raise RuntimeError(f"❌ {norm_name}未收敛！状态：{prob.status}，建议增大max_iters")
-#
-#     return margin_dict
 
+
+def load_data_or_generate(config_data):
+    """根据配置加载或生成数据，返回 5 个值。"""
+
+    data_path = config_data['data_path']
+    regenerate = config_data['regenerate_if_not_found']
+
+    # 尝试加载
+    if data_path and os.path.exists(data_path):
+        try:
+            with open(data_path, "r", encoding="utf-8") as f:
+                data_dict = json.load(f)
+            X = np.array(data_dict["X"], dtype=np.float32)
+            y = np.array(data_dict["y"], dtype=np.int64)
+            class_centers = np.array(data_dict["class_centers"], dtype=np.float32)
+            data_params = data_dict["data_params"]
+            max_margin_results = data_dict["max_margin"]
+            print(f"✅ 从 {data_path} 加载数据成功。样本数: {len(X)}")
+            return X, y, class_centers, data_params, max_margin_results
+        except Exception as e:
+            print(f"❌ 数据加载失败 ({e})，将转为重新生成数据。")
+    # 重新生成 (调用主生成函数)
+    return generate_standard_gaussian_data(
+        k=config_data['k'], d=config_data['d'], n_per_class=config_data['n_per_class'],
+        sigma=config_data['sigma'], seed=config_data['seed'],
+        regenerate=True, save_dir=config_data['save_dir']
+    )
 
 # -------------------------- 测试改进效果 --------------------------
 if __name__ == "__main__":
