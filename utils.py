@@ -58,8 +58,8 @@ def calculate_implicit_bias_metrics(
     # 预先计算 Fro norm，用于相关性计算和 L2 归一化
     norm_Wt_fro = np.linalg.norm(Wt_np, 'fro')
 
-    # 2. 迭代计算三种范数的指标
-    for norm_key in ["L2_norm", "Linf_norm", "spectral_norm"]:
+    # 2. 迭代计算四种范数的指标
+    for norm_key in ["L2_norm", "Linf_norm", "spectral_norm","nuclear_norm"]:
 
         result = max_margin_results[norm_key]
         Vi_np = np.array(result["matrix"])
@@ -82,9 +82,11 @@ def calculate_implicit_bias_metrics(
         if norm_key == "L2_norm":
             current_norm_Wt = norm_Wt_fro
         elif norm_key == "Linf_norm":
-            current_norm_Wt = np.linalg.norm(Wt_np, np.inf)
+            current_norm_Wt = np.max(np.abs(Wt_np))
         elif norm_key == "spectral_norm":
             current_norm_Wt = np.linalg.norm(Wt_np, 2)
+        elif norm_key == "nuclear_norm":
+            current_norm_Wt = np.linalg.norm(Wt_np, "nuc")
         else:
             current_norm_Wt = 0.0
 

@@ -52,10 +52,32 @@ def train(config_path: str = "config.json"):
 
     dataset = TensorDataset(X_tensor, y_tensor)
     dataloader = DataLoader(dataset, batch_size=n_samples, shuffle=False)
-
+    init_method = config['training'].get('init_method', 'gaussian').lower()  # 默认使用高斯
+    init_scale = config['training'].get('init_scale', 0.01)
     # 修正：使用字典访问 config['data']['k']
     model = nn.Linear(d_features, config['data']['k'], bias=False)
     loss_fn = nn.CrossEntropyLoss()
+    for name, module in model.named_modules():
+        if isinstance(module, nn.Linear):
+            # 零初始化 (Zero Initialization)
+            if init_method == 'zero':
+                nn.init.constant_(module.weight, 0.0)
+                if module.bias is not None:
+                    nn.init.constant_(module.bias, 0.0)
+                print(f"   -> 模块 '{name}' 权重设为零。")
+
+            # 高斯初始化 (Gaussian/Normal Initialization)
+            elif init_method == 'gaussian':
+                # 使用 PyTorch 内建的 Normal 初始化
+                nn.init.normal_(module.weight, mean=0.0, std=init_scale)
+                if module.bias is not None:
+                    nn.init.constant_(module.bias, 0.0)  # 偏置通常设为零
+                print(f"   -> 模块 '{name}' 权重使用高斯分布 (Std={init_scale})。")
+
+            # 默认/其他初始化
+            else:
+                warnings.warn(f"⚠️ 未知的初始化方法 '{init_method}'。使用 PyTorch 默认初始化。")
+                # PyTorch 默认初始化 (通常是 Kaiming Uniform)
 
     # 5. 初始化优化器和学习率调度器
     # 传入 config 的 'training' 子字典
@@ -96,6 +118,27 @@ def train(config_path: str = "config.json"):
             correct = (predicted == targets).sum().item()
             accuracy = correct / n_samples
 
+            # --- 提取打印所需数据 (Current/Optimal Gamma & Correlation) ---
+
+            # L2 Norm (Frobenius)
+            normalized_L2_gamma = metrics['gamma_norm/L2_norm_normalized_gamma']
+            optimal_L2_gamma = max_margin_results['L2_norm']['gamma']
+            L2_corr = metrics['corr/L2_norm_correlation']
+
+            # Linf Norm
+            normalized_Linf_gamma = metrics['gamma_norm/Linf_norm_normalized_gamma']
+            optimal_Linf_gamma = max_margin_results['Linf_norm']['gamma']
+            Linf_corr = metrics['corr/Linf_norm_correlation']
+
+            # Spectral Norm
+            normalized_spec_gamma = metrics['gamma_norm/spectral_norm_normalized_gamma']
+            optimal_spec_gamma = max_margin_results['spectral_norm']['gamma']
+            spec_corr = metrics['corr/spectral_norm_correlation']
+
+            normalized_nuclear_gamma = metrics['gamma_norm/nuclear_norm_normalized_gamma']
+            optimal_nuclear_gamma = max_margin_results['nuclear_norm']['gamma']
+            nuclear_corr = metrics['corr/nuclear_norm_correlation']
+
             log_data = {
                 "epoch": epoch,
                 "loss/train_loss": loss.item(),
@@ -105,9 +148,13 @@ def train(config_path: str = "config.json"):
             }
             wandb.log(log_data, step=epoch)
 
+            # --- 最终修改后的 Print 语句 ---
             print(
-                f"Epoch {epoch}/{config['training']['epochs']} | Loss: {loss.item():.6f} | LR: {current_lr:.6e} | Spec_Err: {metrics['gamma_error/spectral_norm_error_from_opt']:.4e}")
-
+                f"Epoch {epoch}/{config['training']['epochs']} | LR：{current_lr}.4f ｜ Loss: {loss.item():.6f} | Acc: {accuracy:.4f} | "
+                f"G(L2): {normalized_L2_gamma:.4f}/{optimal_L2_gamma:.4f} (Corr: {L2_corr:.4f}) | "
+                f"G(Linf): {normalized_Linf_gamma:.4f}/{optimal_Linf_gamma:.4f} (Corr: {Linf_corr:.4f}) | "
+                f"G(Spec): {normalized_spec_gamma:.4f}/{optimal_spec_gamma:.4f} (Corr: {spec_corr:.4f})"
+            )
     print("\n--- 3. 训练完成 ---")
     wandb.finish()
 
