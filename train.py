@@ -1,5 +1,7 @@
 import torch
 import torch.nn as nn
+from transformers.integrations import run_hp_search_wandb
+
 import wandb
 import json
 import os
@@ -18,7 +20,7 @@ def train(config_path: str = "config.json"):
     # 1. 加载配置：直接命名为 config
     with open(config_path, 'r') as f:
         config: Dict[str, Any] = json.load(f)
-
+    use_wandb=config['use_wandb']
     # 动态生成 WandB 运行名称 (使用字典访问 config['key'])
     now = datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
     optimizer_name = config['training']['optimizer']
@@ -32,11 +34,12 @@ def train(config_path: str = "config.json"):
 
     # 2. 配置 WandB
     # 注意：不再将 wandb.config 赋值给任何变量
-    wandb.init(
-        project=config['wandb_project'],
-        config=config,  # 传入原始字典
-        name=run_name
-    )
+    if use_wandb:
+        wandb.init(
+            project=config['wandb_project'],
+            config=config,  # 传入原始字典
+            name=run_name
+        )
 
     # 3. 数据加载或生成
     print("--- 1. 数据加载与 Max Margin 求解 ---")
@@ -161,7 +164,8 @@ def train(config_path: str = "config.json"):
                 "lr/current_lr": current_lr,
                 **metrics
             }
-            wandb.log(log_data, step=epoch)
+            if use_wandb:
+                wandb.log(log_data, step=epoch)
 
             # --- 最终修改后的 Print 语句 ---
             print(
@@ -172,6 +176,7 @@ def train(config_path: str = "config.json"):
                 f"G(Nuclear): {normalized_nuclear_gamma:.4f}/{optimal_nuclear_gamma:.4f} (Corr: {nuclear_corr:.4f})"
             )
     print("\n--- 3. 训练完成 ---")
-    wandb.finish()
+    if use_wandb:
+        wandb.finish()
 
 train(config_path="config.json")

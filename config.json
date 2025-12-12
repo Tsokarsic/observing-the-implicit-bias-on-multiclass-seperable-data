@@ -1,7 +1,7 @@
 {
     "experiment_name": "ImplicitBias",
     "wandb_project": "Deep_Learning_Project",
-
+    "use_wandb": true
     "data": {
         "data_path": "experiment_data/max_margin_results_final_formatnew.json",
         "regenerate_if_not_found": true,
