@@ -13,7 +13,34 @@ import wandb
 import os
 import argparse
 from typing import Dict, Any, Tuple
+
+from optimizer.LRGD import LRGD
+from optimizer.Muon import Muon
+from optimizer.NGD import NormalizedGD
+from optimizer.NucGD import NucGD
+from optimizer.PolarGrad import PolarGrad
 from optimizer.signgd import SignGD
+
+def load_data_or_generate(config_data):
+    """根据配置加载或生成数据，返回 5 个值。"""
+
+    data_path = config_data['data_path']
+    regenerate = config_data['regenerate_if_not_found']
+
+    # 尝试加载
+    if data_path and os.path.exists(data_path):
+        try:
+            with open(data_path, "r", encoding="utf-8") as f:
+                data_dict = json.load(f)
+            X = np.array(data_dict["X"], dtype=np.float32)
+            y = np.array(data_dict["y"], dtype=np.int64)
+            class_centers = np.array(data_dict["class_centers"], dtype=np.float32)
+            data_params = data_dict["data_params"]
+            max_margin_results = data_dict["max_margin"]
+            print(f"✅ 从 {data_path} 加载数据成功。样本数: {len(X)}")
+            return X, y, class_centers, data_params, max_margin_results
+        except Exception as e:
+            raise ValueError(f"❌ 数据加载失败 ({e})，请先生成数据。")
 
 
 def calculate_implicit_bias_metrics(
@@ -120,10 +147,20 @@ def get_optimizer(model: nn.Module, config: Dict[str, Any]) -> optim.Optimizer:
     if optim_name == 'SignGD':
         return SignGD(model.parameters(),  **optim_params)
     elif optim_name == 'Adam':
-        return optim.Adam(model.parameters(),  **optim_params)
+        return optim.AdamW(model.parameters(),  **optim_params)
     elif optim_name in ('GD', 'MomentumGD'):
         # 对于 GD/SGD，从 params 中提取 momentum（GD 默认为 0.0）
         return optim.SGD(model.parameters(),  **optim_params)
+    elif optim_name == 'NGD':
+        return NormalizedGD(model.parameters(), **optim_params)
+    elif optim_name == 'Muon':
+        return Muon(model.parameters(), **optim_params)
+    elif optim_name == "PolarGrad":
+        return PolarGrad(model.parameters(), **optim_params)
+    elif optim_name == "NucGD":
+        return NucGD(model.parameters(), **optim_params)
+    elif optim_name == "LRGD":
+        return LRGD(model.parameters(), **optim_params)
     else:
         raise ValueError(f"不支持的优化器: {optim_name}")
 
@@ -156,7 +193,7 @@ def get_lr_scheduler(config):
             # warmup_steps 后：$\frac{base\_lr}{\sqrt{(step - warmup_steps) + t0}}$ 衰减
             else:
                 decay_step = step - warmup_steps
-                actual_lr=base_lr*np.sqrt(t0)/ np.sqrt(float(decay_step) + t0)
+                actual_lr=base_lr*np.sqrt(t0)/np.sqrt(float(decay_step) + t0)
                 # print(actual_lr)# 衰减阶段的起始步（从0开始）
                 return actual_lr
 

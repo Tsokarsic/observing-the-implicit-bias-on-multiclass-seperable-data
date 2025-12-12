@@ -7,7 +7,6 @@ import argparse
 import numpy as np
 from torch.utils.data import TensorDataset, DataLoader
 from utils import *
-from generate_data import *
 import datetime
 
 from typing import Dict, Any
@@ -25,7 +24,11 @@ def train(config_path: str = "config.json"):
     optimizer_name = config['training']['optimizer']
     optim_params = config['training']['optimizer_params'].get(optimizer_name, {})
     base_lr = optim_params.get('lr', 1e-3)
-    run_name = f"{now}_{optimizer_name}_lr{base_lr}"
+    if "momentum" in optim_params:
+        momentum = optim_params['momentum']
+    else:
+        momentum = 0
+    run_name = f"{now}_{optimizer_name}_lr{base_lr}_momentum{momentum}"
 
     # 2. 配置 WandB
     # 注意：不再将 wandb.config 赋值给任何变量
@@ -49,12 +52,15 @@ def train(config_path: str = "config.json"):
     X_tensor = torch.tensor(X_np, dtype=torch.float32)
     y_tensor = torch.tensor(y_np, dtype=torch.long)
     n_samples, d_features = X_tensor.shape
-
+    # sigma=config['training']['noise_scale']
     dataset = TensorDataset(X_tensor, y_tensor)
-    dataloader = DataLoader(dataset, batch_size=n_samples, shuffle=False)
+    batch_size=config['training']['batch_size']
+    if not int(batch_size) >=1 :
+        dataloader = DataLoader(dataset, batch_size=n_samples, shuffle=False)
+    else:
+        dataloader = DataLoader(dataset, batch_size=batch_size, shuffle=False)
     init_method = config['training'].get('init_method', 'gaussian').lower()  # 默认使用高斯
     init_scale = config['training'].get('init_scale', 0.01)
-    # 修正：使用字典访问 config['data']['k']
     model = nn.Linear(d_features, config['data']['k'], bias=False)
     loss_fn = nn.CrossEntropyLoss()
     for name, module in model.named_modules():
@@ -87,9 +93,9 @@ def train(config_path: str = "config.json"):
     # 6. 训练循环
     print(f"\n--- 2. 开始训练 ---")
     current_step = 0
-
+    max_epochs = int(config['training']['epochs']/n_samples*batch_size)
     # 使用字典访问 config['training']['epochs']
-    for epoch in range(1, config['training']['epochs'] + 1):
+    for epoch in range(1,max_epochs + 1):
         for inputs, targets in dataloader:
 
             current_step += 1
@@ -105,12 +111,18 @@ def train(config_path: str = "config.json"):
             outputs = model(inputs)
             loss = loss_fn(outputs, targets)
             loss.backward()
-
+            # if sigma > 1e-8:  # 避免sigma为0时无意义计算
+            #     for param in model.parameters():
+            #         if param.grad is not None:  # 确保梯度存在
+            #             # 生成与梯度同形状的标准高斯噪声 (均值0，标准差sigma)
+            #             noise = torch.randn_like(param.grad) * sigma*torch.norm(param.grad,"fro")
+            #             # 叠加噪声到梯度上
+            #             param.grad.add_(noise)
             optimizer.step()
 
         # 7. 指标计算与日志记录
         # 使用字典访问 config['training']['log_interval']
-        if epoch % config['training']['log_interval'] == 0 or epoch == config['training']['epochs']:
+        if current_step % config['training']['log_interval'] == 0 or epoch == max_epochs:
             Wt = model.weight.data
             metrics = calculate_implicit_bias_metrics(Wt, X_tensor, y_tensor, max_margin_results)
 
@@ -140,7 +152,7 @@ def train(config_path: str = "config.json"):
             nuclear_corr = metrics['corr/nuclear_norm_correlation']
 
             log_data = {
-                "epoch": epoch,
+                "step": current_step,
                 "loss/train_loss": loss.item(),
                 "accuracy/train_accuracy": accuracy,
                 "lr/current_lr": current_lr,
@@ -150,10 +162,11 @@ def train(config_path: str = "config.json"):
 
             # --- 最终修改后的 Print 语句 ---
             print(
-                f"Epoch {epoch}/{config['training']['epochs']} | LR：{current_lr}.4f ｜ Loss: {loss.item():.6f} | Acc: {accuracy:.4f} | "
+                f"Step {current_step}/{config['training']['epochs']} | LR：{current_lr}.4f ｜ Loss: {loss.item():.6f} | Acc: {accuracy:.4f} | "
                 f"G(L2): {normalized_L2_gamma:.4f}/{optimal_L2_gamma:.4f} (Corr: {L2_corr:.4f}) | "
                 f"G(Linf): {normalized_Linf_gamma:.4f}/{optimal_Linf_gamma:.4f} (Corr: {Linf_corr:.4f}) | "
-                f"G(Spec): {normalized_spec_gamma:.4f}/{optimal_spec_gamma:.4f} (Corr: {spec_corr:.4f})"
+                f"G(Spec): {normalized_spec_gamma:.4f}/{optimal_spec_gamma:.4f} (Corr: {spec_corr:.4f}) | "
+                f"G(Nuclear): {normalized_nuclear_gamma:.4f}/{optimal_nuclear_gamma:.4f} (Corr: {nuclear_corr:.4f})"
             )
     print("\n--- 3. 训练完成 ---")
     wandb.finish()

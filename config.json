@@ -1,6 +1,6 @@
 {
-    "experiment_name": "ImplicitBias_MaxMargin_Analysis",
-    "wandb_project": "Multiclass_Implicit_Bias",
+    "experiment_name": "ImplicitBias_",
+    "wandb_project": "Deep_Learning_Project",
 
     "data": {
         "data_path": "experiment_data/max_margin_results_final_formatnew.json",
@@ -15,7 +15,9 @@
 
     "training": {
         "epochs": 10000,
-        "optimizer": "SignGD",
+        "optimizer_list": "GD/SignGD/NGD/Muon/NucGD/NormSign/LRGD/Shampoo/Adam/PolarGrad",
+        "batch_size": -1,
+        "optimizer": "Muon",
         "log_interval": 200,
         "lr_schedule": {
         "type": "sqrt_t_decay_with_warmup",
@@ -27,7 +29,12 @@
         "optimizer_params": {
             "GD": {"lr": 10, "momentum": 0.0},
             "Adam": {"lr": 0.001, "betas": [0.9, 0.999], "eps": 1e-8, "weight_decay": 0},
-            "SignGD": {"lr": 0.005, "eps": 0}
+            "SignGD": {"lr": 0.005, "eps": 0 ,"momentum": 0.99,"weight_decay":0},
+            "NGD": {"lr": 0.1, "eps": 0 ,"momentum": 0},
+            "Muon":  {"lr": 0.02,  "momentum": 0.9 ,"weight_decay":0,"full_svd": true},
+            "PolarGrad":  {"lr": 1,  "momentum": 0.9 ,"weight_decay":0.5},
+            "NucGD":  {"lr": 0.25,  "momentum": 0.9 ,"weight_decay":0},
+            "LRGD":  {"lr": 0.1,  "momentum": 0.9 ,"weight_decay":0}
         }
     }
 }
