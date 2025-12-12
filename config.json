@@ -1,5 +1,5 @@
 {
-    "experiment_name": "ImplicitBias_",
+    "experiment_name": "ImplicitBias",
     "wandb_project": "Deep_Learning_Project",
 
     "data": {
@@ -16,7 +16,7 @@
     "training": {
         "epochs": 10000,
         "optimizer_list": "GD/SignGD/NGD/Muon/NucGD/NormSign/LRGD/Shampoo/Adam/PolarGrad",
-        "batch_size": -1,
+        "batch_size": 1,
         "optimizer": "Muon",
         "log_interval": 200,
         "lr_schedule": {

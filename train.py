@@ -57,8 +57,10 @@ def train(config_path: str = "config.json"):
     batch_size=config['training']['batch_size']
     if not int(batch_size) >=1 :
         dataloader = DataLoader(dataset, batch_size=n_samples, shuffle=False)
+        max_epochs = config['training']['epochs']
     else:
         dataloader = DataLoader(dataset, batch_size=batch_size, shuffle=False)
+        max_epochs = int(config['training']['epochs'] / n_samples * batch_size)
     init_method = config['training'].get('init_method', 'gaussian').lower()  # 默认使用高斯
     init_scale = config['training'].get('init_scale', 0.01)
     model = nn.Linear(d_features, config['data']['k'], bias=False)
@@ -93,7 +95,8 @@ def train(config_path: str = "config.json"):
     # 6. 训练循环
     print(f"\n--- 2. 开始训练 ---")
     current_step = 0
-    max_epochs = int(config['training']['epochs']/n_samples*batch_size)
+
+    print(max_epochs)
     # 使用字典访问 config['training']['epochs']
     for epoch in range(1,max_epochs + 1):
         for inputs, targets in dataloader:
