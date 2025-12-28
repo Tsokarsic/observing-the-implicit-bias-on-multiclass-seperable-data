@@ -16,14 +16,19 @@ from typing import Dict, Any
 # 1. 主训练函数
 # ==============================================================================
 
-def train(config_path: str = "config.json"):
+def train(config_path: str = "config.json",optimizer1=None):
     # 1. 加载配置：直接命名为 config
     with open(config_path, 'r') as f:
         config: Dict[str, Any] = json.load(f)
     use_wandb=config['use_wandb']
     # 动态生成 WandB 运行名称 (使用字典访问 config['key'])
     now = datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
-    optimizer_name = config['training']['optimizer']
+    if optimizer1 is not None:
+        optimizer_name = optimizer1
+        config['training']['optimizer']=optimizer1
+    else:
+        optimizer_name = config['training']['optimizer']
+    print(optimizer_name)
     optim_params = config['training']['optimizer_params'].get(optimizer_name, {})
     base_lr = optim_params.get('lr', 1e-3)
     if "momentum" in optim_params:
@@ -61,6 +66,7 @@ def train(config_path: str = "config.json"):
     if not int(batch_size) >=1 :
         dataloader = DataLoader(dataset, batch_size=n_samples, shuffle=False)
         max_epochs = config['training']['epochs']
+        batch_size = n_samples
     else:
         dataloader = DataLoader(dataset, batch_size=batch_size, shuffle=False)
         max_epochs = int(config['training']['epochs'] / n_samples * batch_size)
@@ -93,7 +99,7 @@ def train(config_path: str = "config.json"):
     # 5. 初始化优化器和学习率调度器
     # 传入 config 的 'training' 子字典
     optimizer = get_optimizer(model, config['training'])
-    lr_scheduler = get_lr_scheduler(config['training'])
+    lr_scheduler = get_lr_scheduler(config['training'],optim_params)
 
     # 6. 训练循环
     print(f"\n--- 2. 开始训练 ---")
@@ -132,13 +138,9 @@ def train(config_path: str = "config.json"):
             Wt = model.weight.data
             metrics = calculate_implicit_bias_metrics(Wt, X_tensor, y_tensor, max_margin_results)
 
-            # 全局准确率：在当前模型权重下用全量样本评估
-            with torch.no_grad():
-                all_outputs = model(X_tensor)
-                _, predicted = torch.max(all_outputs, 1)
-                correct = (predicted == y_tensor).sum().item()
-                # print(predicted)
-                accuracy = correct / n_samples
+            _, predicted = torch.max(outputs.data, 1)
+            correct = (predicted == targets).sum().item()
+            accuracy = correct / batch_size
 
             # --- 提取打印所需数据 (Current/Optimal Gamma & Correlation) ---
 
@@ -179,8 +181,32 @@ def train(config_path: str = "config.json"):
                 f"G(Spec): {normalized_spec_gamma:.4f}/{optimal_spec_gamma:.4f} (Corr: {spec_corr:.4f}) | "
                 f"G(Nuclear): {normalized_nuclear_gamma:.4f}/{optimal_nuclear_gamma:.4f} (Corr: {nuclear_corr:.4f})"
             )
+        if epoch == max_epochs:
+            matrix = model.weight.data
+            matrix=matrix/np.linalg.norm(matrix)
+            # Plot singular values
+
     print("\n--- 3. 训练完成 ---")
     if use_wandb:
         wandb.finish()
-
+    return matrix
 train(config_path="config.json")
+matrix1=train(config_path="config.json",optimizer1="Muon")
+matrix2=train(config_path="config.json",optimizer1="NucGD")
+matrix3=train(config_path="config.json",optimizer1="NGD")
+matrix4=train(config_path="config.json",optimizer1="SignGD")
+import matplotlib.pyplot as plt
+weight_matrices={"Muon(Lspec)":matrix1,"NucGD(Lnuc)":matrix2,"NGD(L2)":matrix3,"SignGD(Linf)":matrix4}
+for name, matrix in weight_matrices.items():
+    # Compute singular values
+    _, s, _ = np.linalg.svd(matrix)
+    # Plot singular values
+    plt.semilogy(range(1, len(s)+1), s, 'o-', label=name)
+plt.xlabel('Index')
+plt.ylabel('Singular Value (log scale)')
+plt.title('Singular Value Spectrum of Solutions Of NSD Under Different Norm')
+plt.grid(True)
+plt.legend()
+plt.tight_layout()
+plt.savefig("spectrum_for_algorithms.png")
+plt.show()

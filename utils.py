@@ -14,11 +14,10 @@ import os
 import argparse
 from typing import Dict, Any, Tuple
 
-from optimizer.LRGD import LRGD
 from optimizer.Muon import Muon
 from optimizer.NGD import NormalizedGD
 from optimizer.NucGD import NucGD
-from optimizer.PolarGrad import PolarGrad
+from optimizer.PGD import PGD
 from optimizer.signgd import SignGD
 
 def load_data_or_generate(config_data):
@@ -155,19 +154,17 @@ def get_optimizer(model: nn.Module, config: Dict[str, Any]) -> optim.Optimizer:
         return NormalizedGD(model.parameters(), **optim_params)
     elif optim_name == 'Muon':
         return Muon(model.parameters(), **optim_params)
-    elif optim_name == "PolarGrad":
-        return PolarGrad(model.parameters(), **optim_params)
     elif optim_name == "NucGD":
         return NucGD(model.parameters(), **optim_params)
-    elif optim_name == "LRGD":
-        return LRGD(model.parameters(), **optim_params)
+    elif optim_name == "PGD":
+        return PGD(model.parameters(), **optim_params)
     else:
         raise ValueError(f"不支持的优化器: {optim_name}")
 
 
 import numpy as np
 
-def get_lr_scheduler(config):
+def get_lr_scheduler(config,optim_params):
     """
     实现：前 N 步恒定学习率 → 之后 $\frac{1}{\sqrt{t - N + t_0}}$ 衰减
     默认 N=5000 步，可通过 config 自定义
@@ -177,8 +174,7 @@ def get_lr_scheduler(config):
     schedule_type = schedule_config['type']
 
     # 从优化器参数中提取 base_lr（保持原有逻辑）
-    optim_name = config['optimizer']
-    optim_params = config['optimizer_params'].get(optim_name, {})
+
     base_lr = optim_params.get('lr', 1e-3)  # 兜底默认值 1e-3
 
     # 新增：恒定学习率的步数（默认5000步，可通过 config 调整）
