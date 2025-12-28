@@ -138,9 +138,13 @@ def train(config_path: str = "config.json",optimizer1=None):
             Wt = model.weight.data
             metrics = calculate_implicit_bias_metrics(Wt, X_tensor, y_tensor, max_margin_results)
 
-            _, predicted = torch.max(outputs.data, 1)
-            correct = (predicted == targets).sum().item()
-            accuracy = correct / batch_size
+            # 全局准确率：在当前模型权重下用全量样本评估
+            with torch.no_grad():
+                all_outputs = model(X_tensor)
+                _, predicted = torch.max(all_outputs, 1)
+                correct = (predicted == y_tensor).sum().item()
+                # print(predicted)
+                accuracy = correct / n_samples
 
             # --- 提取打印所需数据 (Current/Optimal Gamma & Correlation) ---
 
